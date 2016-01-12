@@ -1008,7 +1008,21 @@ class Word2Vec(utils.SaveLoad):
         once = random.RandomState(uint32(self.hashfxn(seed_string)))
         return (once.rand(self.vector_size) - 0.5) / self.vector_size
 
-    def save_word2vec_format(self, fname, fvocab=None, binary=False):
+    def write_to_file(self, fout, para=0, binary=False):
+        if para == 0:
+            syn = self.syn0
+        elif para == 1:
+            syn = self.syn1
+        fout.write(utils.to_utf8("%s %s\n" % syn.shape))
+        # store in sorted order: most frequent words at the top
+        for word, vocab in sorted(iteritems(self.vocab), key=lambda item: -item[1].count):
+            row = syn[vocab.index]
+            if binary:
+                fout.write(utils.to_utf8(word) + b" " + row.tostring())
+            else:
+                fout.write(utils.to_utf8("%s %s\n" % (word, ' '.join("%f" % val for val in row))))
+
+    def save_word2vec_format(self, fname0, fname1=None, fvocab=None, binary=False):
         """
         Store the input-hidden weight matrix in the same format used by the original
         C word2vec-tool, for compatibility.
@@ -1019,20 +1033,16 @@ class Word2Vec(utils.SaveLoad):
             with utils.smart_open(fvocab, 'wb') as vout:
                 for word, vocab in sorted(iteritems(self.vocab), key=lambda item: -item[1].count):
                     vout.write(utils.to_utf8("%s %s\n" % (word, vocab.count)))
-        logger.info("storing %sx%s projection weights into %s" % (len(self.vocab), self.vector_size, fname))
+        logger.info("storing %sx%s projection weights into %s" % (len(self.vocab), self.vector_size, fname0))
         assert (len(self.vocab), self.vector_size) == self.syn0.shape
-        with utils.smart_open(fname, 'wb') as fout:
-            fout.write(utils.to_utf8("%s %s\n" % self.syn0.shape))
-            # store in sorted order: most frequent words at the top
-            for word, vocab in sorted(iteritems(self.vocab), key=lambda item: -item[1].count):
-                row = self.syn0[vocab.index]
-                if binary:
-                    fout.write(utils.to_utf8(word) + b" " + row.tostring())
-                else:
-                    fout.write(utils.to_utf8("%s %s\n" % (word, ' '.join("%f" % val for val in row))))
+        with utils.smart_open(fname0, 'wb') as fout:
+            self.write_to_file(fout, 0, binary)
+        if fname1:
+            with utils.smart_open(fname1, 'wb')  as fout:
+                self.write_to_file(fout, 1, binary)
 
     @classmethod
-    def load_word2vec_format(cls, fname, fvocab=None, binary=False, norm_only=True, encoding='utf8'):
+    def load_word2vec_format(cls, fname, fname1=None, fvocab=None, binary=False, norm_only=True, encoding='utf8'):
         """
         Load the input-hidden weight matrix from the original C word2vec-tool format.
 
@@ -1101,6 +1111,29 @@ class Word2Vec(utils.SaveLoad):
                         result.vocab[word] = Vocab(index=line_no, count=None)
                     result.index2word.append(word)
                     result.syn0[line_no] = weights
+        if fname1:
+            with utils.smart_open(fname1) as fin:
+                header = utils.to_unicode(fin.readline(), encoding=encoding)
+                vocab_size, vector_size = map(int, header.split())  # throws for invalid file format
+                result.syn1 = zeros((vocab_size, vector_size), dtype=REAL)
+                if binary:
+                    binary_len = dtype(REAL).itemsize * vector_size
+                    for line_no in xrange(vocab_size):
+                    # mixed text and binary: read text first, then binary
+                        word = []
+                        while True:
+                            ch = fin.read(1)
+                            if ch == b' ':
+                                break
+                        result.syn1[line_no] = fromstring(fin.read(binary_len), dtype=REAL)
+                else:
+                    for line_no, line in enumerate(fin):
+                        parts = utils.to_unicode(line.rstrip(), encoding=encoding).split(" ")
+                        if len(parts) != vector_size + 1:
+                            raise ValueError("invalid vector on line %s (is this really the text format?)" % (line_no))
+                        word, weights = parts[0], list(map(REAL, parts[1:]))
+                        result.syn1[line_no] = weights
+
         logger.info("loaded %s matrix from %s" % (result.syn0.shape, fname))
         result.init_sims(norm_only)
         return result
