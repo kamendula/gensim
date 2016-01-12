@@ -966,21 +966,18 @@ class Word2Vec(utils.SaveLoad):
         # randomize the remaining words
         for i in xrange(len(self.syn0), len(newsyn0)):
             # construct deterministic seed from word AND seed argument
-			#change self.syn0[i] to self.newsyn0[i]
             newsyn0[i] = self.seeded_vector(self.index2word[i] + str(self.seed))
         self.syn0 = deepcopy(newsyn0)
 
         if self.hs:
             oldsyn1 = deepcopy(self.syn1)
             self.syn1 = zeros((len(self.vocab), self.layer1_size), dtype=REAL)
-			#the origin is self.syn1[i] = deepcopy(oldsyn1[i]), add the for loop.
             for i in xrange(0, len(oldsyn1)):
                 self.syn1[i] = deepcopy(oldsyn1[i])
 
         if self.negative:
             oldneg = deepcopy(self.syn1neg)
             self.syn1neg = zeros((len(self.vocab), self.layer1_size), dtype=REAL)
-            #the origin is self.syn1neg[i] = deepcopy(oldneg[i]), add the for loop.
             for i in xrange(0, len(oldsyn1)):
                 self.syn1neg[i] = deepcopy(oldneg[i])
 
